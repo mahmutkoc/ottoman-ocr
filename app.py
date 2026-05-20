@@ -2,7 +2,6 @@
 
 import streamlit as st
 
-# Sayfa konfigürasyonu (en üstte olmalı)
 st.set_page_config(
     page_title="Osmanlıca Metin Okuyucu",
     page_icon="📜",
@@ -19,18 +18,88 @@ from ui.components import (
     render_stats,
 )
 from core.image_processor import load_image, preprocess, image_to_base64
-from core.ocr_engine import analyze_pages
+from core.ocr_engine import analyze_image
 from core.output_formatter import build_txt_content, get_download_filename
+from core.dataset_manager import kaydet, istatistik_getir
 
-# CSS enjeksiyon
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+BELGE_TURLERI = ["ferman", "mektup", "senet", "berat", "sicil", "arzuhal", "diger"]
+HAT_STILLERI  = ["nesih", "rika", "talik", "divani", "matbu"]
+
+
+def veri_seti_paneli():
+    """Sidebar'da veri seti istatistiklerini göster."""
+    ist = istatistik_getir()
+    toplam = ist["toplam_belge"]
+    hedef  = ist["hedef"]
+    yuzde  = int(toplam / hedef * 100) if hedef else 0
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        '<p style="color:#c9a84c;font-size:0.8rem;text-transform:uppercase;'
+        'letter-spacing:0.1em;margin-bottom:0.5rem;">Veri Seti</p>',
+        unsafe_allow_html=True,
+    )
+    st.sidebar.progress(toplam / hedef if hedef else 0)
+    st.sidebar.markdown(
+        f'<p style="color:#d4c5a0;font-size:0.82rem;">'
+        f'<b>{toplam}</b> / {hedef} belge &nbsp;·&nbsp; %{yuzde}</p>',
+        unsafe_allow_html=True,
+    )
+
+
+def onay_paneli(file_bytes: bytes, filename: str, page_results: list):
+    """Analiz sonrası onay ve veri setine kaydetme paneli."""
+    st.markdown("---")
+    st.markdown(
+        '<div class="card-title">Veri Setine Ekle</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="color:#8a7a5a;font-size:0.85rem;margin-bottom:1rem;">'
+        "Claude'un okuması doğru mu? Onaylarsanız bu belge veri setinize kaydedilir "
+        "ve ilerideki kendi modelinizi eğitmekte kullanılır.</p>",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        belge_turu = st.selectbox("Belge Türü", BELGE_TURLERI, index=6)
+    with col2:
+        hat_stili = st.selectbox("Hat Stili", HAT_STILLERI, index=0)
+
+    col_onayla, col_reddet = st.columns(2)
+
+    with col_onayla:
+        if st.button("✅  Onayla ve Kaydet", use_container_width=True):
+            birlesik_analiz = "\n\n".join(
+                f"[Sayfa {r['page']}]\n{r['result']}" for r in page_results
+            )
+            try:
+                yeni_id = kaydet(
+                    goruntu_bytes=file_bytes,
+                    dosya_adi=filename,
+                    analiz_sonucu=birlesik_analiz,
+                    belge_turu=belge_turu,
+                    hat_stili=hat_stili,
+                )
+                st.success(f"✅ Belge #{yeni_id} veri setine kaydedildi!")
+                st.session_state["kaydedildi"] = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Kayıt hatası: {e}")
+
+    with col_reddet:
+        if st.button("❌  Reddet", use_container_width=True):
+            st.warning("Belge reddedildi, veri setine eklenmedi.")
+            st.session_state["kaydedildi"] = False
 
 
 def main():
     render_header()
-
-    # Sidebar ayarları
     preprocess_opts = render_preprocess_settings()
+    veri_seti_paneli()
 
     # ── Dosya Yükleme ──
     st.markdown('<div class="card-title">Belge Yükle</div>', unsafe_allow_html=True)
@@ -79,7 +148,6 @@ def main():
     # ── Analiz Başlat ──
     if st.button("🔍  Metni Analiz Et", use_container_width=True):
         images_b64 = [image_to_base64(p) for p in processed_pages]
-
         page_results = []
         progress = st.progress(0, text="Analiz başlatılıyor...")
 
@@ -90,28 +158,25 @@ def main():
             )
             with st.spinner(f"Sayfa {i} okunuyor..."):
                 try:
-                    from core.ocr_engine import analyze_image
                     result = analyze_image(b64, page_num=i, total_pages=len(images_b64))
                     page_results.append({"page": i, "result": result})
                 except Exception as e:
                     page_results.append({"page": i, "result": f"HATA: {e}"})
 
         progress.progress(1.0, text="Analiz tamamlandı.")
-
-        # Sonuçları session_state'e kaydet
         st.session_state["page_results"] = page_results
         st.session_state["filename"] = uploaded.name
+        st.session_state["file_bytes"] = file_bytes
+        st.session_state.pop("kaydedildi", None)
 
     # ── Sonuçları Göster ──
     if "page_results" in st.session_state:
         page_results = st.session_state["page_results"]
-        filename = st.session_state["filename"]
+        filename     = st.session_state["filename"]
+        file_bytes_s = st.session_state.get("file_bytes", file_bytes)
 
         st.markdown("---")
-        st.markdown(
-            '<div class="card-title">Analiz Sonuçları</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="card-title">Analiz Sonuçları</div>', unsafe_allow_html=True)
 
         render_stats(page_results)
         st.markdown("")
@@ -125,7 +190,6 @@ def main():
         st.markdown("---")
         txt_content = build_txt_content(filename, page_results)
         dl_name = get_download_filename(filename)
-
         st.download_button(
             label="⬇  Sonucu .txt Olarak İndir",
             data=txt_content.encode("utf-8"),
@@ -133,6 +197,12 @@ def main():
             mime="text/plain; charset=utf-8",
             use_container_width=True,
         )
+
+        # ── Onay Paneli ──
+        if not st.session_state.get("kaydedildi"):
+            onay_paneli(file_bytes_s, filename, page_results)
+        else:
+            st.success("✅ Bu belge zaten veri setine kaydedildi.")
 
 
 if __name__ == "__main__":

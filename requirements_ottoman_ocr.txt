@@ -1,0 +1,18 @@
+# Osmanlıca TrOCR Fine-Tuning - Gerekli Kütüphaneler
+# Kurulum: pip install -r requirements_ottoman_ocr.txt
+#
+# NOT: PyTorch + CUDA 12.1 zaten kurulu olduğu varsayılmaktadır.
+# Eğer kurulu değilse önce şunu çalıştırın:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+transformers>=4.38.0
+datasets>=2.18.0
+accelerate>=0.27.0
+Pillow>=10.2.0
+pandas>=2.2.0
+openpyxl>=3.1.2
+tqdm>=4.66.0
+editdistance>=0.8.1
+torchvision>=0.17.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0

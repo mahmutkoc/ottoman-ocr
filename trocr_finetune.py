@@ -374,20 +374,21 @@ def main():
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg.BATCH_SIZE,
-        shuffle=True, num_workers=4, pin_memory=True
+        shuffle=True, num_workers=0, pin_memory=True
     )
     val_loader = DataLoader(
         val_ds, batch_size=cfg.BATCH_SIZE,
-        shuffle=False, num_workers=4, pin_memory=True
+        shuffle=False, num_workers=0, pin_memory=True
     )
     test_loader = DataLoader(
         test_ds, batch_size=cfg.BATCH_SIZE,
-        shuffle=False, num_workers=4, pin_memory=True
+        shuffle=False, num_workers=0, pin_memory=True
     )
 
     # ── Optimizer & Scheduler ─────────────────
     optimizer = AdamW(model.parameters(), lr=cfg.LEARNING_RATE, weight_decay=0.01)
-    total_steps = (len(train_loader) // cfg.GRAD_ACCUM) * cfg.NUM_EPOCHS
+    import math
+    total_steps = math.ceil(len(train_loader) / cfg.GRAD_ACCUM) * cfg.NUM_EPOCHS
     scheduler = OneCycleLR(
         optimizer,
         max_lr=cfg.LEARNING_RATE,

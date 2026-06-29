@@ -1,5 +1,7 @@
 """Osmanlıca Metin Okuyucu — Ana Uygulama."""
 
+import os
+
 import streamlit as st
 
 st.set_page_config(
@@ -8,6 +10,50 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+def _dogru_sifreyi_al() -> str | None:
+    """Şifreyi Streamlit secrets veya ortam değişkeninden oku."""
+    try:
+        if "APP_PASSWORD" in st.secrets:
+            return st.secrets["APP_PASSWORD"]
+    except Exception:
+        pass
+    return os.environ.get("APP_PASSWORD")
+
+
+def giris_kontrolu() -> bool:
+    """
+    Şifre korumalı giriş ekranı. APP_PASSWORD tanımlı değilse
+    (örn. yerel geliştirme ortamında) kontrol atlanır.
+    """
+    dogru_sifre = _dogru_sifreyi_al()
+    if not dogru_sifre:
+        return True
+
+    if st.session_state.get("girildi"):
+        return True
+
+    st.markdown(
+        "<div style='max-width:400px;margin:6rem auto;text-align:center;'>"
+        "<h2>🔒 Osmanlıca Metin Okuyucu</h2>"
+        "<p>Devam etmek için şifre girin.</p></div>",
+        unsafe_allow_html=True,
+    )
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        sifre = st.text_input("Şifre", type="password", key="sifre_giris")
+        if st.button("Giriş Yap", use_container_width=True):
+            if sifre == dogru_sifre:
+                st.session_state["girildi"] = True
+                st.rerun()
+            else:
+                st.error("Hatalı şifre.")
+    return False
+
+
+if not giris_kontrolu():
+    st.stop()
 
 from ui.styles import CUSTOM_CSS
 from ui.components import (
@@ -18,7 +64,8 @@ from ui.components import (
     render_stats,
 )
 from core.image_processor import load_image, preprocess, image_to_base64
-from core.ocr_engine import analyze_image
+from core.ocr_engine import analyze_image as analyze_image_claude
+from core.pipeline import analyze_image_pipeline, pipeline_hazir_mi
 from core.output_formatter import build_txt_content, get_download_filename
 from core.dataset_manager import kaydet, istatistik_getir
 
@@ -101,6 +148,29 @@ def main():
     preprocess_opts = render_preprocess_settings()
     veri_seti_paneli()
 
+    # ── OCR Motor Seçimi ──
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        '<p style="color:#c9a84c;font-size:0.8rem;text-transform:uppercase;'
+        'letter-spacing:0.1em;margin-bottom:0.5rem;">OCR Motoru</p>',
+        unsafe_allow_html=True,
+    )
+    motor_secenekler = []
+    if pipeline_hazir_mi():
+        motor_secenekler.append("🕌 PaddleOCR + Transliterasyon (Offline)")
+    motor_secenekler.append("☁️ Claude API")
+    secilen_motor = st.sidebar.radio("Motor", motor_secenekler, index=0)
+
+    if secilen_motor.startswith("🕌"):
+        st.sidebar.success("Offline pipeline hazır ✓")
+        arapca_goster = st.sidebar.checkbox("Ara sonucu göster (Arap harfleri)", value=True)
+    else:
+        arapca_goster = False
+        if secilen_motor.startswith("🤖"):
+            st.sidebar.success("Fine-tune model hazır ✓")
+        else:
+            st.sidebar.info("Claude Vision API kullanılıyor")
+
     # ── Dosya Yükleme ──
     st.markdown('<div class="card-title">Belge Yükle</div>', unsafe_allow_html=True)
     uploaded = st.file_uploader(
@@ -158,7 +228,10 @@ def main():
             )
             with st.spinner(f"Sayfa {i} okunuyor..."):
                 try:
-                    result = analyze_image(b64, page_num=i, total_pages=len(images_b64))
+                    if secilen_motor.startswith("🕌"):
+                        result = analyze_image_pipeline(b64, page_num=i, total_pages=len(images_b64), arapca_da_goster=arapca_goster)
+                    else:
+                        result = analyze_image_claude(b64, page_num=i, total_pages=len(images_b64))
                     page_results.append({"page": i, "result": result})
                 except Exception as e:
                     page_results.append({"page": i, "result": f"HATA: {e}"})

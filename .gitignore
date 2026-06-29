@@ -5,3 +5,9 @@ __pycache__/
 logs/
 .DS_Store
 .env.save
+.streamlit/secrets.toml
+checkpoints/
+model_output/
+egitim verileri-20260603T164853Z-3-001/
+pdf_dataset/
+training.log

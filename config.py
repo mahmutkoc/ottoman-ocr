@@ -2,11 +2,23 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# .env dosyasını her zaman proje klasöründen yükle
+# .env dosyasını her zaman proje klasöründen yükle (yerel geliştirme için)
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+def _api_key_al() -> str:
+    """Önce Streamlit secrets (bulut dağıtımı), yoksa .env (yerel) içinden oku."""
+    try:
+        import streamlit as st
+        if "ANTHROPIC_API_KEY" in st.secrets:
+            return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass
+    return os.getenv("ANTHROPIC_API_KEY", "")
+
+
+ANTHROPIC_API_KEY = _api_key_al()
 MODEL_NAME = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
 SUPPORTED_IMAGE_FORMATS = ["png", "jpg", "jpeg"]
